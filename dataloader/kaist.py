@@ -3,8 +3,6 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 
-from dataloader import get_datapath
-datapath = get_datapath("kaist")
 
 
 import torch
@@ -16,13 +14,14 @@ import os
 from pathlib import Path
 
 class kaistdataset(data.Dataset):
-    def __init__(self,root_dir):
+    def __init__(self,root_dir,img_size=(256,256)):
         self.root_dir = root_dir
         self.dir_name = ["lwir","visible"]
         self.visible_dir = os.path.join(self.root_dir,self.dir_name[1])
         self.infrared_dir = os.path.join(self.root_dir,self.dir_name[0])
         self.visible_list =sorted(self._list_all_files(self.visible_dir))
         self.infrared_list = sorted(self._list_all_files(self.infrared_dir))
+        self.img_size = img_size
     def __getitem__(self, index):
         vis_img = self._change_image_to_tensor(self.visible_list[index])
         inf_img = self._change_image_to_tensor(self.infrared_list[index])
@@ -31,11 +30,11 @@ class kaistdataset(data.Dataset):
         return len(self.visible_list)
     def _change_image_to_tensor(self,image_path):
         img = cv2.imread(image_path,cv2.IMREAD_GRAYSCALE)
+        img = cv2.resize(img,self.img_size,cv2.INTER_AREA)
         if img is not None:
             img = img.astype(np.float32)/255.0
             img = np.expand_dims(img,axis=0)
             img_tensor = torch.from_numpy(img)
-            img_tensor=img_tensor.cuda()
             return img_tensor
 
 
@@ -48,7 +47,3 @@ class kaistdataset(data.Dataset):
                 image_list.append(str(filepath))
         return image_list
     
-if __name__ == "__main__":
-    a = kaistdataset(datapath)
-    # print(a._list_all_files(a.visible_dir))
-    print(len(a))
