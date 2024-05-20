@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.autograd import Variable
 import cv2
 import gc
-epochs = 3
+epochs = 15
 EPSILON=1e-5
 
 def _save_checkpoint(model, dir, save_best=False, overwrite=True):
@@ -77,7 +77,7 @@ def evaluate(nest_model,fusion_model,dataset_name,dataset_path,alpha,w_vi,w_ir,t
             loss1_value = loss1_value.item()
             loss2_value = loss2_value.item()
             total_loss = loss1_value+loss2_value
-            if index%100 == 0:
+            if index%50 == 0:
                 tensorboard_writer.add_scalar("Validation/total_loss",total_loss,index)
                 tensorboard_writer.add_scalar("Validation/ms_ssim_loss",loss1_value,index)
                 tensorboard_writer.add_scalar("Validation/mse_loss",loss2_value,index)
@@ -96,7 +96,6 @@ def save_img(img,path):
 	for i in range(batch):
 		img = img.detach()
 		img_numpy = img[i].squeeze().cpu().numpy()
-		img_numpy = (img_numpy*255).astype(np.uint8)
 		img_resize = cv2.resize(img_numpy,(640,512),cv2.INTER_AREA)
 		path1 = os.path.join(path,f"第{i}张图.png")
 		cv2.imwrite(str(path1),img_resize)
@@ -131,7 +130,7 @@ def main():
 	dataset = get_dataset("kaist")(get_datapath("kaist"))
 	# True - RGB , False - gray
 	img_flag = False
-	alpha_list = [700,800,900]
+	alpha_list = [600,700,800,900]
 	w_all_list = [[6.0, 3.0],[7.0,3.0],[6.0,4.0]]
 
 	for w_w in w_all_list:
@@ -170,7 +169,7 @@ def train(dataset, img_flag, alpha, w1, w2):
 	# if args.resume_fusion_model is not None:
 	# 	print('Resuming, initializing fusion net using weight from {}.'.format(args.resume_fusion_model))
 	# 	fusion_model.load_state_dict(torch.load(args.resume_fusion_model))
-	optimizer = torch.optim.Adam(fusion_model.parameters(), 3e-4)
+	optimizer = torch.optim.Adam(fusion_model.parameters(), 3e-5)
 	mse_loss = torch.nn.MSELoss()
 	ssim_loss = MS_SSIM(data_range=1.0,channel=1)
 
@@ -274,17 +273,30 @@ def train(dataset, img_flag, alpha, w1, w2):
 			all_fea_loss += loss2_value.item() # 
 			all_ssim_loss += loss1_value.item() # 
 			if index %100 == 0:
-				tensor_writer.add_scalar("Training/ssim_loss",all_ssim_loss,index+e*len(dataset))
-				tensor_writer.add_scalar("Training/mse_loss",all_fea_loss,index+e*len(dataset))
-				tensor_writer.add_scalar("Training/total_loss",total_loss.item(),index+e*len(dataset))
+				tensor_writer.add_scalar("Training/ssim_loss",all_ssim_loss,index+e*len(dataloader))
+				tensor_writer.add_scalar("Training/mse_loss",all_fea_loss,index+e*len(dataloader))
+				tensor_writer.add_scalar("Training/total_loss",total_loss.item(),index+e*len(dataloader))
+				# tensor_writer.add_scalar("Training/ssim",all_ssim_loss,index+e*len(dataloader))
+				# tensor_writer.add_scalar("Training/ms_ssim",all_fea_loss,index+e*len(dataloader))
+				# tensor_writer.add_scalar("Training/total_loss",total_loss.item(),index+e*len(dataloader))
 			if index%400 ==0:
 				ssim,ms_ssim = evaluate(nest_model,fusion_model,"kaist",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/dataset/test/kaist_wash_picture_test",alpha,w_vi,w_ir,tensor_writer,root_dir)
 				if ssim>max_ssim or ms_ssim > max_ms_ssim:
 					_save_checkpoint(fusion_model,root_dir)
-					path = str(os.path.join(root_dir,f"{index+e*len(dataset)}"))
+					path = str(os.path.join(root_dir,f"{index+e*len(dataloader)}次融合"))
+					output = outputs[0]
+					output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
+					output = output * 255
 					os.makedirs(path,exist_ok=True)
-					save_img(outputs[0],path)
-				
+					save_img(output,path)
+					path = str(os.path.join(root_dir,f"{index+e*len(dataloader)}次视觉"))
+					img_vi = img_vi*255
+					os.makedirs(path,exist_ok=True)
+					save_img(img_vi,path)
+					path = str(os.path.join(root_dir,f"{index+e*len(dataloader)}次热成像"))
+					img_ir = img_ir*255
+					os.makedirs(path,exist_ok=True)
+					save_img(img_ir,path)
 			# if (batch + 1) % args.log_interval == 0:
 			# 	mesg = "{}\t Alpha: {} \tW-IR: {}\tEpoch {}:\t[{}/{}]\t ssim loss: {:.6f}\t fea loss: {:.6f}\t total: {:.6f}".format(
 			# 		time.ctime(), alpha, w1, e + 1, count, batches,
@@ -306,7 +318,7 @@ def train(dataset, img_flag, alpha, w1, w2):
 		# torch.save(fusion_model.state_dict(), save_model_path)
 
 		# print("\nDone, trained model saved at", save_model_path)
-		tensor_writer.close()
+	tensor_writer.close()
 
 
 
