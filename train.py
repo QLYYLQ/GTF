@@ -16,19 +16,18 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.autograd import Variable
 import cv2
 import gc
-epochs = 15
+epochs = 6
 EPSILON=1e-5
-
-def _save_checkpoint(model, dir, save_best=False, overwrite=True):
+number = 0
+def _save_checkpoint(model, dir,name, save_best=False, overwrite=True):
     checkpoint = {}
     checkpoint['model'] = model.state_dict()
 
-    filename = os.path.join(dir,"best.pth")
+    filename = os.path.join(dir,name+" best.pth")
     torch.save(checkpoint, filename)
     print("Saving current best model: best_model.pth")
     
-
-def evaluate(nest_model,fusion_model,dataset_name,dataset_path,alpha,w_vi,w_ir,tensorboard_writer,save_dir=None):
+def evaluate(nest_model,fusion_model,dataset_name,dataset_path,alpha,w_vi,w_ir,tensorboard_writer,number=number,save_dir=None):
     dataset = get_dataset(dataset_name)(dataset_path)
     dataloader = DataLoader(dataset,batch_size=6,num_workers=4,drop_last=True)
     ssim_loss = MS_SSIM(data_range=1.0,channel=1)
@@ -78,13 +77,14 @@ def evaluate(nest_model,fusion_model,dataset_name,dataset_path,alpha,w_vi,w_ir,t
             loss2_value = loss2_value.item()
             total_loss = loss1_value+loss2_value
             if index%50 == 0:
-                tensorboard_writer.add_scalar("Validation/total_loss",total_loss,index)
-                tensorboard_writer.add_scalar("Validation/ms_ssim_loss",loss1_value,index)
-                tensorboard_writer.add_scalar("Validation/mse_loss",loss2_value,index)
-                tensorboard_writer.add_scalar("Validation/ms_ssim",ssim_loss_temp2.item(),index)
-                tensorboard_writer.add_scalar("Validation/ssim",ssim1.item(),index)
+                tensorboard_writer.add_scalar("Validation/total_loss",total_loss,number)
+                tensorboard_writer.add_scalar("Validation/ms_ssim_loss",loss1_value,number)
+                tensorboard_writer.add_scalar("Validation/mse_loss",loss2_value,number)
+                tensorboard_writer.add_scalar("Validation/ms_ssim",ssim_loss_temp2.item(),number)
+                tensorboard_writer.add_scalar("Validation/ssim",ssim1.item(),number)
                 ssim_list.append(ssim1.item())
                 ms_ssim_list.append(ssim_loss_temp2.item())
+
     return max(ssim_list),max(ms_ssim_list)
 
 
@@ -165,7 +165,7 @@ def train(dataset, img_flag, alpha, w1, w2):
 	fusion_model = Fusion_network(nb_filter, f_type)
 	fusion_model.cuda()
 	fusion_model.train()
-
+	nest_model.train()
 	# if args.resume_fusion_model is not None:
 	# 	print('Resuming, initializing fusion net using weight from {}.'.format(args.resume_fusion_model))
 	# 	fusion_model.load_state_dict(torch.load(args.resume_fusion_model))
@@ -208,11 +208,12 @@ def train(dataset, img_flag, alpha, w1, w2):
 	tensor_writer = SummaryWriter(root_dir,flush_secs=30)
 	max_ssim=0
 	max_ms_ssim = 0
+	count = 0
 	for e in tbar:
 		print('Epoch %d.....' % e)
 		# load training database
 		
-		count = 0
+
 		for index,batch in tqdm(enumerate(dataloader),total=len(dataloader)):
 			ssim=0
 			ms_ssim = 0
@@ -280,9 +281,12 @@ def train(dataset, img_flag, alpha, w1, w2):
 				# tensor_writer.add_scalar("Training/ms_ssim",all_fea_loss,index+e*len(dataloader))
 				# tensor_writer.add_scalar("Training/total_loss",total_loss.item(),index+e*len(dataloader))
 			if index%400 ==0:
-				ssim,ms_ssim = evaluate(nest_model,fusion_model,"kaist",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/dataset/test/kaist_wash_picture_test",alpha,w_vi,w_ir,tensor_writer,root_dir)
+				ssim,ms_ssim = evaluate(nest_model,fusion_model,"kaist",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/dataset/test/kaist_wash_picture_test",alpha,w_vi,w_ir,tensor_writer,count,root_dir)
+				nest_model.train()
+				fusion_model.train()
 				if ssim>max_ssim or ms_ssim > max_ms_ssim:
-					_save_checkpoint(fusion_model,root_dir)
+					_save_checkpoint(fusion_model,root_dir,"fusion model")
+					_save_checkpoint(nest_model,root_dir,"nest model")
 					path = str(os.path.join(root_dir,f"{index+e*len(dataloader)}次融合"))
 					output = outputs[0]
 					output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
@@ -297,6 +301,7 @@ def train(dataset, img_flag, alpha, w1, w2):
 					img_ir = img_ir*255
 					os.makedirs(path,exist_ok=True)
 					save_img(img_ir,path)
+			count+=1
 			# if (batch + 1) % args.log_interval == 0:
 			# 	mesg = "{}\t Alpha: {} \tW-IR: {}\tEpoch {}:\t[{}/{}]\t ssim loss: {:.6f}\t fea loss: {:.6f}\t total: {:.6f}".format(
 			# 		time.ctime(), alpha, w1, e + 1, count, batches,
