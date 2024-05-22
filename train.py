@@ -157,6 +157,7 @@ def train(dataset, img_flag, alpha, w1, w2):
 		model_path = r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/model/nestfuse_gray_1e2.model"
 		# load auto-encoder network
 		print('Resuming, initializing auto-encoder using weight from {}.'.format(model_path))
+		# nest = torch.load(model_path)
 		nest_model.load_state_dict(torch.load(model_path))
 		nest_model.cuda()
 		nest_model.eval()
