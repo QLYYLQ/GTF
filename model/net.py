@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from functools import partial
 import math
 import random
 import pdb
@@ -155,9 +155,11 @@ class f_ConvLayer(torch.nn.Module):
         return out
 
 class FusionBlock_res(torch.nn.Module):
-    def __init__(self, channels, img_size, index):
+    def __init__(self, channels, img_size, index,embed_dims=[32,64,160,256]):
         super(FusionBlock_res, self).__init__()
-
+        self.embed_dims = embed_dims
+        self.mlp = [8,8,4,4]
+        norm_layer = partial(nn.LayerNorm(),eps=1e-6)
         # self.axial_attn = AxialBlock(channels, channels//2, kernel_size=img_size)
         self.attn = LSK_Block(channels)
         self.axial_fusion = nn.Sequential(f_ConvLayer(2*channels, channels, 1, 1))
@@ -184,7 +186,6 @@ class FusionBlock_res(torch.nn.Module):
         out = torch.cat([x_cvi, x_cir], 1)
         out = self.bottelblock(out)
         out = a_init + out 
-
         return out
 
 
@@ -210,28 +211,6 @@ class Fusion_network(nn.Module):
 
         return [f1_0, f2_0, f3_0, f4_0]
 
-
-
-# class Fusion_network(nn.Module):
-#     def __init__(self, nC, fs_type):
-#         super(Fusion_network, self).__init__()
-#         self.fs_type = fs_type
-#         img_size = [256,128,64,32]
-#         #img_size = [84,42,21,10]
-
-#         self.fusion_block1 = LSK_Block(nC[0])
-#         self.fusion_block2 = LSK_Block(nC[1])
-#         self.fusion_block3 = LSK_Block(nC[2])
-#         self.fusion_block4 = LSK_Block(nC[3])
-
-#     def forward(self, en_ir, en_vi):
-#         # 输入输出大小，维度不变
-#         f1_0 = self.fusion_block1(en_ir[0], en_vi[0])
-#         f2_0 = self.fusion_block2(en_ir[1], en_vi[1])
-#         f3_0 = self.fusion_block3(en_ir[2], en_vi[2])
-#         f4_0 = self.fusion_block4(en_ir[3], en_vi[3])
-
-#         return [f1_0, f2_0, f3_0, f4_0]
 
 
 

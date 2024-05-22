@@ -64,7 +64,9 @@ def eval_each_dataset(eval_name,fusion_model,nest_model):
             f = fusion_model(en_ir,en_vi)
             out = nest_model.decoder_eval(f)
             output = out[0]
-            output = output / (torch.max(output) - torch.min(output) + EPSILON)
+            output[output>255]=255
+            # output = output / (torch.max(output) - torch.min(output) + EPSILON)
+            draw_picture(out[0][0],r"/root/autodl-tmp/test_for_paper/Code_For_ITCD")
             # out = out[0]
             save_img(output,r"/root/autodl-tmp/test_for_paper/Code_For_ITCD")
 
@@ -73,10 +75,21 @@ def save_img(img,path):
 	batch = img.shape[0]
 	for i in range(batch):
 		img = img.detach()
-		img_numpy = img[i].squeeze().cpu().numpy()*255
+		img_numpy = img[i].squeeze().cpu().numpy()
 		img_resize = cv2.resize(img_numpy,(640,512),cv2.INTER_AREA)
 		path1 = os.path.join(path,f"第{i}张图.png")
 		cv2.imwrite(str(path1),img_resize)
+
+
+import matplotlib.pyplot as plt
+
+def draw_picture(tensor,path):
+    data = tensor.cpu().flatten().numpy()
+    hist,bins = np.histogram(data,bins=100)
+    hist = np.log(hist+1)
+    plt.figure(figsize=(20,12))
+    plt.bar(bins[:-1], hist, width=(bins[1]-bins[0]), log=True, color='skyblue')
+    plt.savefig(os.path.join(path,"test.png"))
 
 if __name__ == "__main__":
     eval1(["TNO"])
