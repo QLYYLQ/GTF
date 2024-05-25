@@ -194,7 +194,7 @@ def main():
     dataset = get_dataset("kaist")(get_datapath("kaist"))
     # True - RGB , False - gray
     img_flag = False
-    beta_gamma_list = [[2, 2], [3, 2], [4, 2]]
+    beta_gamma_list = [[2, 3], [3, 3], [4, 3]]
     weight_for_vi_if_list = [[0.6, 0.4], [0.7, 0.3], [0.8, 0.2]]
 
     for w_w in weight_for_vi_if_list:
@@ -369,7 +369,7 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
             all_fea_loss += loss2_value.item()
             all_ssim_loss += beta * loss1_value.item()
             all_texture_loss += gamma * gradinet_loss.item()
-            if index % 100 == 0:
+            if index % 30 == 0:
                 tensor_writer.add_scalar("Training/ssim_loss", all_ssim_loss, count)
                 tensor_writer.add_scalar("Training/mse_loss", all_fea_loss, count)
                 tensor_writer.add_scalar(

@@ -10,3 +10,4 @@ test_for_sam
 saved/*
 *.out
 eval_saved
+nohup.out
