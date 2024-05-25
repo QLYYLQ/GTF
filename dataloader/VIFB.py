@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from torchvision import transforms
 
-class TNOdataset(Dataset):
+class VIFBdataset(Dataset):
     def __init__(self,root_dir,img_size = (256,256),transform = transforms.Compose([transforms.ToTensor(),])):
         self.root_dir = root_dir
         self.dir_name = ["Inf","Vis"]

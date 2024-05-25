@@ -13,10 +13,10 @@ import numpy as np
 import torch
 from torchvision import transforms
 
-class TNOdataset(Dataset):
-    def __init__(self,root_dir,img_size = (256,256),transform = transforms.Compose([transforms.ToTensor(),])):
+class RoadScenedataset(Dataset):
+    def __init__(self,root_dir,img_size = (512,512),transform = transforms([transforms.ToTensor(),])):
         self.root_dir = root_dir
-        self.dir_name = ["Inf","Vis"]
+        self.dir_name = ["cropinfrared","crop_HR_visible"]
         self.visible_dir = os.path.join(root_dir,self.dir_name[1])
         self.infrared_dir = os.path.join(root_dir,self.dir_name[0])
         self.visible_list = self._list_all_files(self.visible_dir)

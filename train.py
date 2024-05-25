@@ -17,8 +17,9 @@ from torch.autograd import Variable
 import cv2
 import gc
 epochs = 6
-EPSILON=1e-5
+EPSILON=1e-6
 number = 0
+# torch.autograd.set_detect_anomaly(True)
 def _save_checkpoint(model, dir,name, save_best=False, overwrite=True):
     checkpoint = {}
     checkpoint['model'] = model.state_dict()
@@ -27,10 +28,11 @@ def _save_checkpoint(model, dir,name, save_best=False, overwrite=True):
     torch.save(checkpoint, filename)
     print("Saving current best model: best_model.pth")
     
-def evaluate(nest_model,fusion_model,dataset_name,dataset_path,alpha,w_vi,w_ir,tensorboard_writer,number=number,save_dir=None):
+def evaluate(nest_model,fusion_model,dataset_name,dataset_path,lamda,w1,w2,tensorboard_writer,number=number,save_dir=None):
     dataset = get_dataset(dataset_name)(dataset_path)
     dataloader = DataLoader(dataset,batch_size=6,num_workers=4,drop_last=True)
-    ssim_loss = MS_SSIM(data_range=1.0,channel=1)
+    vi_ssim_loss = MS_SSIM(data_range=1.0,channel=1)
+    ir_ssim_loss = MS_SSIM(data_range=1.0,channel=1)
     mse_loss = torch.nn.MSELoss()
     nest_model.eval()
     fusion_model.eval()
@@ -50,26 +52,49 @@ def evaluate(nest_model,fusion_model,dataset_name,dataset_path,alpha,w_vi,w_ir,t
 			# decoder
             outputs = nest_model.decoder_eval(f)
             x_vi = Variable(img_vi.data.clone(), requires_grad=False)
+            x_ir = Variable(img_ir.data.clone(), requires_grad=False)
             for output in outputs:
+                # output[output>255]=255
+                # output[output<0]=0
                 output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
                 output = output * 255
 				# ---------------------- LOSS IMAGES ------------------------------------
 				# detail loss
-                ssim_loss_temp2 = ssim_loss(output, x_vi)
-                ssim1 = ssim(output,x_vi,data_range=1.0,size_average=True)
-                loss1_value = alpha * (1 - ssim_loss_temp2)
-				# feature loss
-                g2_ir_fea = en_ir
-                g2_vi_fea = en_vi
-                g2_fuse_fea = f
+                # ssim_loss_temp2 = ssim_loss(output, x_vi)
+                ssim_vi = ssim(output,x_vi,data_range=1.0,size_average=True)
+                ssim_ir = ssim(output,x_ir,data_range=1.0,size_average=True)
+                # loss1_value = alpha * (1 - ssim_loss_temp2)
+				# # feature loss
+                # g2_ir_fea = en_ir
+                # g2_vi_fea = en_vi
+                # g2_fuse_fea = f
 
-                w_fea = [1, 10, 100, 1000]
-                for ii in range(4):
-                    g2_ir_temp = g2_ir_fea[ii]
-                    g2_vi_temp = g2_vi_fea[ii]
-                    g2_fuse_temp = g2_fuse_fea[ii]
-                    (bt, cht, ht, wt) = g2_ir_temp.size()
-                    loss2_value += w_fea[ii]*mse_loss(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
+                # w_fea = [1, 10, 100, 1000]
+                # for ii in range(4):
+                #     g2_ir_temp = g2_ir_fea[ii]
+                #     g2_vi_temp = g2_vi_fea[ii]
+                #     g2_fuse_temp = g2_fuse_fea[ii]
+                #     (bt, cht, ht, wt) = g2_ir_temp.size()
+                #     loss2_value += w_fea[ii]*mse_loss(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
+                ssim_loss_temp_vi = vi_ssim_loss(output, x_vi)
+                ssim_loss_temp_ir = ir_ssim_loss(output,x_ir)
+                loss1_value += w1*lamda * (1 - ssim_loss_temp_vi)+w2*lamda*(1-ssim_loss_temp_ir)
+
+				# # feature loss
+				# g2_ir_fea = en_ir
+				# g2_vi_fea = en_vi
+				# g2_fuse_fea = f
+
+				# w_ir = [w1, w1, w1, w1]
+				# w_vi = [w2, w2, w2, w2]
+				# w_fea = [1, 10, 100, 1000]
+				# for ii in range(4):
+				# 	g2_ir_temp = g2_ir_fea[ii]
+				# 	g2_vi_temp = g2_vi_fea[ii]
+				# 	g2_fuse_temp = g2_fuse_fea[ii]
+				# 	(bt, cht, ht, wt) = g2_ir_temp.size()
+				# 	loss2_value += w_fea[ii]*mse_loss(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
+                loss2_value += mse_loss(output,w1*x_vi+w2*x_ir)
 
             loss1_value /= len(outputs)
             loss2_value /= len(outputs)
@@ -80,10 +105,12 @@ def evaluate(nest_model,fusion_model,dataset_name,dataset_path,alpha,w_vi,w_ir,t
                 tensorboard_writer.add_scalar("Validation/total_loss",total_loss,number)
                 tensorboard_writer.add_scalar("Validation/ms_ssim_loss",loss1_value,number)
                 tensorboard_writer.add_scalar("Validation/mse_loss",loss2_value,number)
-                tensorboard_writer.add_scalar("Validation/ms_ssim",ssim_loss_temp2.item(),number)
-                tensorboard_writer.add_scalar("Validation/ssim",ssim1.item(),number)
-                ssim_list.append(ssim1.item())
-                ms_ssim_list.append(ssim_loss_temp2.item())
+                tensorboard_writer.add_scalar("Validation/vi_ms_ssim",ssim_loss_temp_vi.item(),number)
+                tensorboard_writer.add_scalar("Validation/vi_ssim",ssim_vi.item(),number)
+                tensorboard_writer.add_scalar("Validation/ir_ms_ssim",ssim_loss_temp_ir.item(),number)
+                tensorboard_writer.add_scalar("Validation/ir_ssim",ssim_ir.item(),number)
+                ssim_list.append(ssim_vi.item())
+                ms_ssim_list.append(ssim_loss_temp_vi.item())
 
     return max(ssim_list),max(ms_ssim_list)
 
@@ -130,16 +157,16 @@ def main():
 	dataset = get_dataset("kaist")(get_datapath("kaist"))
 	# True - RGB , False - gray
 	img_flag = False
-	alpha_list = [600,700,800,900]
-	w_all_list = [[6.0, 3.0],[7.0,3.0],[6.0,4.0]]
+	lamda_list = [600,700,800]
+	gamma_list = [[0.6, 0.4],[0.7,0.3],[0.8,0.2]]
 
-	for w_w in w_all_list:
+	for w_w in gamma_list:
 		w1, w2 = w_w
-		for alpha in alpha_list:
-			train(dataset, img_flag, alpha, w1, w2)
+		for lamda in lamda_list:
+			train(dataset, img_flag, lamda, w1, w2)
 
 
-def train(dataset, img_flag, alpha, w1, w2):
+def train(dataset, img_flag, lamda, w1, w2):
 
 	batch_size =6
 	# load network model
@@ -149,7 +176,7 @@ def train(dataset, img_flag, alpha, w1, w2):
 	#nb_filter = [64, 128, 256, 512]
 	nb_filter = [64, 112, 160, 208]
 	f_type = 'res'
-	root_dir = create_dir(alpha,w1,w2)
+	root_dir = create_dir(lamda,w1,w2)
 	dataloader = DataLoader(dataset,batch_size=batch_size,shuffle=True,drop_last=True,num_workers=4)
 	with torch.no_grad():
 		deepsupervision = False
@@ -172,7 +199,8 @@ def train(dataset, img_flag, alpha, w1, w2):
 	# 	fusion_model.load_state_dict(torch.load(args.resume_fusion_model))
 	optimizer = torch.optim.Adam(fusion_model.parameters(), 3e-5)
 	mse_loss = torch.nn.MSELoss()
-	ssim_loss = MS_SSIM(data_range=1.0,channel=1)
+	vi_ssim_loss = MS_SSIM(data_range=1.0,channel=1)
+	ir_ssim_loss = MS_SSIM(data_range=1.0,channel=1)
 
 
 	tbar = trange(epochs)
@@ -206,7 +234,9 @@ def train(dataset, img_flag, alpha, w1, w2):
 	#trans_model.cuda()
 	fusion_model.cuda()
 	sobel_loss = nn.L1Loss()
-	tensor_writer = SummaryWriter(root_dir,flush_secs=30)
+	tensorboard_dir = f"{lamda} {w1} {w2}"
+	tensorboard = "/root/tf-logs/"+tensorboard_dir
+	tensor_writer = SummaryWriter(tensorboard,flush_secs=30)
 	max_ssim=0
 	max_ms_ssim = 0
 	count = 0
@@ -241,27 +271,31 @@ def train(dataset, img_flag, alpha, w1, w2):
 			all_ssim_loss = 0.
 			all_fea_loss = 0.
 			for output in outputs:
+				# output[output>255]=255
+				# output[output<0]=0
 				output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
 				output = output * 255
 				# ---------------------- LOSS IMAGES ------------------------------------
 				# detail loss
-				ssim_loss_temp2 = ssim_loss(output, x_vi)
-				loss1_value += alpha * (1 - ssim_loss_temp2)
+				ssim_loss_temp_vi = vi_ssim_loss(output, x_vi)
+				ssim_loss_temp_ir = ir_ssim_loss(output,x_ir)
+				loss1_value += w1*lamda * (1 - ssim_loss_temp_vi)+w2*lamda*(1-ssim_loss_temp_ir)
 
-				# feature loss
-				g2_ir_fea = en_ir
-				g2_vi_fea = en_vi
-				g2_fuse_fea = f
+				# # feature loss
+				# g2_ir_fea = en_ir
+				# g2_vi_fea = en_vi
+				# g2_fuse_fea = f
 
-				w_ir = [w1, w1, w1, w1]
-				w_vi = [w2, w2, w2, w2]
-				w_fea = [1, 10, 100, 1000]
-				for ii in range(4):
-					g2_ir_temp = g2_ir_fea[ii]
-					g2_vi_temp = g2_vi_fea[ii]
-					g2_fuse_temp = g2_fuse_fea[ii]
-					(bt, cht, ht, wt) = g2_ir_temp.size()
-					loss2_value += w_fea[ii]*mse_loss(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
+				# w_ir = [w1, w1, w1, w1]
+				# w_vi = [w2, w2, w2, w2]
+				# w_fea = [1, 10, 100, 1000]
+				# for ii in range(4):
+				# 	g2_ir_temp = g2_ir_fea[ii]
+				# 	g2_vi_temp = g2_vi_fea[ii]
+				# 	g2_fuse_temp = g2_fuse_fea[ii]
+				# 	(bt, cht, ht, wt) = g2_ir_temp.size()
+				# 	loss2_value += w_fea[ii]*mse_loss(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
+				loss2_value += mse_loss(output,w1*x_vi+w2*x_ir)
 
 			loss1_value /= len(outputs)
 			loss2_value /= len(outputs)
@@ -282,7 +316,7 @@ def train(dataset, img_flag, alpha, w1, w2):
 				# tensor_writer.add_scalar("Training/ms_ssim",all_fea_loss,index+e*len(dataloader))
 				# tensor_writer.add_scalar("Training/total_loss",total_loss.item(),index+e*len(dataloader))
 			if index%400 ==0:
-				ssim,ms_ssim = evaluate(nest_model,fusion_model,"kaist",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/dataset/test/kaist_wash_picture_test",alpha,w_vi,w_ir,tensor_writer,count,root_dir)
+				ssim,ms_ssim = evaluate(nest_model,fusion_model,"kaist",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/dataset/test/kaist_wash_picture_test",lamda,w1,w2,tensor_writer,count,root_dir)
 				nest_model.train()
 				fusion_model.train()
 				if ssim>max_ssim or ms_ssim > max_ms_ssim:
@@ -290,8 +324,10 @@ def train(dataset, img_flag, alpha, w1, w2):
 					_save_checkpoint(nest_model,root_dir,"nest model")
 					path = str(os.path.join(root_dir,f"{index+e*len(dataloader)}次融合"))
 					output = outputs[0]
-					output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
-					output = output * 255
+					output[output>255]=255
+					output[output<0]=0
+					# output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
+					# output = output * 255
 					os.makedirs(path,exist_ok=True)
 					save_img(output,path)
 					path = str(os.path.join(root_dir,f"{index+e*len(dataloader)}次视觉"))

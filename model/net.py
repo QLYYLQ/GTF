@@ -159,9 +159,9 @@ class FusionBlock_res(torch.nn.Module):
         super(FusionBlock_res, self).__init__()
         self.embed_dims = embed_dims
         self.mlp = [8,8,4,4]
-        norm_layer = partial(nn.LayerNorm(),eps=1e-6)
+        self.norm_layer = partial(nn.LayerNorm,eps=1e-6)
         # self.axial_attn = AxialBlock(channels, channels//2, kernel_size=img_size)
-        self.attn = LSK_Block(channels)
+        self.attn = nn.Sequential(LSK_Block(channels))
         self.axial_fusion = nn.Sequential(f_ConvLayer(2*channels, channels, 1, 1))
         self.conv_fusion = nn.Sequential(f_ConvLayer(channels, channels, 1, 1))
         #self.conv_fusion_bn = nn.BatchNorm2d(channels)
@@ -185,7 +185,8 @@ class FusionBlock_res(torch.nn.Module):
         
         out = torch.cat([x_cvi, x_cir], 1)
         out = self.bottelblock(out)
-        out = a_init + out 
+        out = a_init + out
+        # out = self.norm_layer(out) 
         return out
 
 
