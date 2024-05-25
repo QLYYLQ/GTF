@@ -10,13 +10,16 @@ from model.lsk import LSKblock
 
 EPSILON = 1e-10
 
+
 def var(x, dim=0):
     x_zero_meaned = x - x.mean(dim).expand_as(x)
     return x_zero_meaned.pow(2).mean(dim)
 
+
 class MultConst(nn.Module):
     def forward(self, input):
-        return 255*input
+        return 255 * input
+
 
 class UpsampleReshape_eval(torch.nn.Module):
     def __init__(self):
@@ -33,18 +36,18 @@ class UpsampleReshape_eval(torch.nn.Module):
         bot = 0
         if shape_x1[3] != shape_x2[3]:
             lef_right = shape_x1[3] - shape_x2[3]
-            if lef_right%2 is 0.0:
-                left = int(lef_right/2)
-                right = int(lef_right/2)
+            if lef_right % 2 == 0.0:
+                left = int(lef_right / 2)
+                right = int(lef_right / 2)
             else:
                 left = int(lef_right / 2)
                 right = int(lef_right - left)
 
         if shape_x1[2] != shape_x2[2]:
             top_bot = shape_x1[2] - shape_x2[2]
-            if top_bot%2 is 0.0:
-                top = int(top_bot/2)
-                bot = int(top_bot/2)
+            if top_bot % 2 == 0.0:
+                top = int(top_bot / 2)
+                bot = int(top_bot / 2)
             else:
                 top = int(top_bot / 2)
                 bot = int(top_bot - top)
@@ -53,6 +56,7 @@ class UpsampleReshape_eval(torch.nn.Module):
         reflection_pad = nn.ReflectionPad2d(reflection_padding)
         x2 = reflection_pad(x2)
         return x2
+
 
 # Dense convolution unit
 class DenseConv2d(torch.nn.Module):
@@ -65,6 +69,7 @@ class DenseConv2d(torch.nn.Module):
         out = torch.cat([x, out], 1)
         return out
 
+
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
@@ -73,33 +78,53 @@ def conv1x1(in_planes, out_planes, stride=1):
 class qkv_transform(nn.Conv1d):
     """Conv1d for qkv_transform"""
 
+
 def _make_layer(self, block, planes, blocks, kernel_size=56, stride=1, dilate=False):
-        norm_layer = self._norm_layer
-        downsample = None
-        previous_dilation = self.dilation
-        if dilate:
-            self.dilation *= stride
-            stride = 1
-        if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(
-                conv1x1(self.inplanes, planes * block.expansion, stride),
-                norm_layer(planes * block.expansion),
+    norm_layer = self._norm_layer
+    downsample = None
+    previous_dilation = self.dilation
+    if dilate:
+        self.dilation *= stride
+        stride = 1
+    if stride != 1 or self.inplanes != planes * block.expansion:
+        downsample = nn.Sequential(
+            conv1x1(self.inplanes, planes * block.expansion, stride),
+            norm_layer(planes * block.expansion),
+        )
+
+    layers = []
+    layers.append(
+        block(
+            self.inplanes,
+            planes,
+            stride,
+            downsample,
+            groups=self.groups,
+            base_width=self.base_width,
+            dilation=previous_dilation,
+            norm_layer=norm_layer,
+            kernel_size=kernel_size,
+        )
+    )
+    self.inplanes = planes * block.expansion
+    if stride != 1:
+        kernel_size = kernel_size // 2
+
+    for _ in range(1, blocks):
+        layers.append(
+            block(
+                self.inplanes,
+                planes,
+                groups=self.groups,
+                base_width=self.base_width,
+                dilation=self.dilation,
+                norm_layer=norm_layer,
+                kernel_size=kernel_size,
             )
+        )
 
-        layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample, groups=self.groups,
-                            base_width=self.base_width, dilation=previous_dilation, 
-                            norm_layer=norm_layer, kernel_size=kernel_size))
-        self.inplanes = planes * block.expansion
-        if stride != 1:
-            kernel_size = kernel_size // 2
+    return nn.Sequential(*layers)
 
-        for _ in range(1, blocks):
-            layers.append(block(self.inplanes, planes, groups=self.groups,
-                                base_width=self.base_width, dilation=self.dilation,
-                                norm_layer=norm_layer, kernel_size=kernel_size))
-
-        return nn.Sequential(*layers)
 
 # Dense Block unit
 # light version
@@ -110,13 +135,16 @@ class DenseBlock_light(torch.nn.Module):
         out_channels_def = int(in_channels / 2)
         # out_channels_def = out_channels
         denseblock = []
-        denseblock += [ConvLayer(in_channels, out_channels_def, kernel_size, stride),
-                       ConvLayer(out_channels_def, out_channels, 1, stride)]
+        denseblock += [
+            ConvLayer(in_channels, out_channels_def, kernel_size, stride),
+            ConvLayer(out_channels_def, out_channels, 1, stride),
+        ]
         self.denseblock = nn.Sequential(*denseblock)
 
     def forward(self, x):
         out = self.denseblock(x)
         return out
+
 
 class ConvLayer(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, is_last=False):
@@ -136,6 +164,7 @@ class ConvLayer(torch.nn.Module):
             # out = self.dropout(out)
         return out
 
+
 # Convolution operation
 class f_ConvLayer(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, is_last=False):
@@ -143,37 +172,39 @@ class f_ConvLayer(torch.nn.Module):
         reflection_padding = int(np.floor(kernel_size / 2))
         self.reflection_pad = nn.ReflectionPad2d(reflection_padding)
         self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride)
-        #self.batch_norm = nn.BatchNorm2d(out_channels)
+        # self.batch_norm = nn.BatchNorm2d(out_channels)
         self.dropout = nn.Dropout2d(p=0.5)
         self.is_last = is_last
 
     def forward(self, x):
         out = self.reflection_pad(x)
         out = self.conv2d(out)
-        #out = self.batch_norm(out)
+        # out = self.batch_norm(out)
         out = F.relu(out, inplace=True)
         return out
 
+
 class FusionBlock_res(torch.nn.Module):
-    def __init__(self, channels, img_size, index,embed_dims=[32,64,160,256]):
+    def __init__(self, channels, img_size, index, embed_dims=[32, 64, 160, 256]):
         super(FusionBlock_res, self).__init__()
         self.embed_dims = embed_dims
-        self.mlp = [8,8,4,4]
-        self.norm_layer = partial(nn.LayerNorm,eps=1e-6)
+        self.mlp = [8, 8, 4, 4]
+        self.norm_layer = partial(nn.LayerNorm, eps=1e-6)
         # self.axial_attn = AxialBlock(channels, channels//2, kernel_size=img_size)
         self.attn = nn.Sequential(LSKblock(channels))
-        self.axial_fusion = nn.Sequential(f_ConvLayer(2*channels, channels, 1, 1))
+        self.axial_fusion = nn.Sequential(f_ConvLayer(2 * channels, channels, 1, 1))
         self.conv_fusion = nn.Sequential(f_ConvLayer(channels, channels, 1, 1))
-        #self.conv_fusion_bn = nn.BatchNorm2d(channels)
-
+        # self.conv_fusion_bn = nn.BatchNorm2d(channels)
 
         block = []
-        block += [f_ConvLayer(2*channels, channels, 1, 1),
-                  f_ConvLayer(channels, channels, 3, 1),      
-                  f_ConvLayer(channels, channels, 3, 1)]
+        block += [
+            f_ConvLayer(2 * channels, channels, 1, 1),
+            f_ConvLayer(channels, channels, 3, 1),
+            f_ConvLayer(channels, channels, 3, 1),
+        ]
         self.bottelblock = nn.Sequential(*block)
-        #self.block_bn = nn.BatchNorm2d(channels)
-        #self.relu = nn.ReLU(inplace=True)
+        # self.block_bn = nn.BatchNorm2d(channels)
+        # self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x_ir, x_vi):
         # initial fusion - conv
@@ -182,11 +213,11 @@ class FusionBlock_res(torch.nn.Module):
 
         x_cvi = self.conv_fusion(x_vi)
         x_cir = self.conv_fusion(x_ir)
-        
+
         out = torch.cat([x_cvi, x_cir], 1)
         out = self.bottelblock(out)
         out = a_init + out
-        # out = self.norm_layer(out) 
+        # out = self.norm_layer(out)
         return out
 
 
@@ -195,8 +226,8 @@ class Fusion_network(nn.Module):
     def __init__(self, nC, fs_type):
         super(Fusion_network, self).__init__()
         self.fs_type = fs_type
-        img_size = [256,128,64,32]
-        #img_size = [84,42,21,10]
+        img_size = [256, 128, 64, 32]
+        # img_size = [84,42,21,10]
 
         self.fusion_block1 = FusionBlock_res(nC[0], img_size[0], 0)
         self.fusion_block2 = FusionBlock_res(nC[1], img_size[1], 1)
@@ -213,63 +244,54 @@ class Fusion_network(nn.Module):
         return [f1_0, f2_0, f3_0, f4_0]
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class Fusion_ADD(torch.nn.Module):
     def forward(self, en_ir, en_vi):
         temp = en_ir + en_vi
         return temp
+
 
 class Fusion_AVG(torch.nn.Module):
     def forward(self, en_ir, en_vi):
         temp = (en_ir + en_vi) / 2
         return temp
 
+
 class Fusion_MAX(torch.nn.Module):
     def forward(self, en_ir, en_vi):
         temp = torch.max(en_ir, en_vi)
         return temp
 
+
 class Fusion_SPA(torch.nn.Module):
     def forward(self, en_ir, en_vi):
         shape = en_ir.size()
-        spatial_type = 'mean'
+        spatial_type = "mean"
         # calculate spatial attention
         spatial1 = spatial_attention(en_ir, spatial_type)
         spatial2 = spatial_attention(en_vi, spatial_type)
         # get weight map, soft-max
-        spatial_w1 = torch.exp(spatial1) / (torch.exp(spatial1) + torch.exp(spatial2) + EPSILON)
-        spatial_w2 = torch.exp(spatial2) / (torch.exp(spatial1) + torch.exp(spatial2) + EPSILON)
+        spatial_w1 = torch.exp(spatial1) / (
+            torch.exp(spatial1) + torch.exp(spatial2) + EPSILON
+        )
+        spatial_w2 = torch.exp(spatial2) / (
+            torch.exp(spatial1) + torch.exp(spatial2) + EPSILON
+        )
 
         spatial_w1 = spatial_w1.repeat(1, shape[1], 1, 1)
         spatial_w2 = spatial_w2.repeat(1, shape[1], 1, 1)
         tensor_f = spatial_w1 * en_ir + spatial_w2 * en_vi
         return tensor_f
 
+
 # spatial attention
-def spatial_attention(tensor, spatial_type='sum'):
+def spatial_attention(tensor, spatial_type="sum"):
     spatial = []
-    if spatial_type == 'mean':
+    if spatial_type == "mean":
         spatial = tensor.mean(dim=1, keepdim=True)
-    elif spatial_type == 'sum':
+    elif spatial_type == "sum":
         spatial = tensor.sum(dim=1, keepdim=True)
     return spatial
+
 
 # fuison strategy based on nuclear-norm (channel attention form NestFuse)
 class Fusion_Nuclear(torch.nn.Module):
@@ -289,6 +311,7 @@ class Fusion_Nuclear(torch.nn.Module):
         tensor_f = global_p_w1 * en_ir + global_p_w2 * en_vi
         return tensor_f
 
+
 # sum of S V for each chanel
 def nuclear_pooling(tensor):
     shape = tensor.size()
@@ -298,6 +321,7 @@ def nuclear_pooling(tensor):
         s_sum = torch.sum(s)
         vectors[0, i, 0, 0] = s_sum
     return vectors
+
 
 # Fusion strategy, two type
 class Fusion_strategy(nn.Module):
@@ -311,15 +335,15 @@ class Fusion_strategy(nn.Module):
         self.fusion_nuc = Fusion_Nuclear()
 
     def forward(self, en_ir, en_vi):
-        if self.fs_type == 'add':
+        if self.fs_type == "add":
             fusion_operation = self.fusion_add
-        elif self.fs_type == 'avg':
+        elif self.fs_type == "avg":
             fusion_operation = self.fusion_avg
-        elif self.fs_type == 'max':
+        elif self.fs_type == "max":
             fusion_operation = self.fusion_max
-        elif self.fs_type == 'spa':
+        elif self.fs_type == "spa":
             fusion_operation = self.fusion_spa
-        elif self.fs_type == 'nuclear':
+        elif self.fs_type == "nuclear":
             fusion_operation = self.fusion_nuc
 
         f1_0 = fusion_operation(en_ir[0], en_vi[0])
@@ -356,9 +380,15 @@ class NestFuse_light2_nodense(nn.Module):
         self.DB3_1 = block(nb_filter[2] + nb_filter[3], nb_filter[2], kernel_size, 1)
 
         # short connection
-        self.DB1_2 = block(nb_filter[0] * 2 + nb_filter[1], nb_filter[0], kernel_size, 1)
-        self.DB2_2 = block(nb_filter[1] * 2+ nb_filter[2], nb_filter[1], kernel_size, 1)
-        self.DB1_3 = block(nb_filter[0] * 3 + nb_filter[1], nb_filter[0], kernel_size, 1)
+        self.DB1_2 = block(
+            nb_filter[0] * 2 + nb_filter[1], nb_filter[0], kernel_size, 1
+        )
+        self.DB2_2 = block(
+            nb_filter[1] * 2 + nb_filter[2], nb_filter[1], kernel_size, 1
+        )
+        self.DB1_3 = block(
+            nb_filter[0] * 3 + nb_filter[1], nb_filter[0], kernel_size, 1
+        )
 
         if self.deepsupervision:
             self.conv1 = ConvLayer(nb_filter[0], output_nc, 1, stride)
@@ -407,7 +437,9 @@ class NestFuse_light2_nodense(nn.Module):
         x3_1 = self.DB3_1(torch.cat([f_en[2], self.up_eval(f_en[2], f_en[3])], 1))
         x2_2 = self.DB2_2(torch.cat([f_en[1], x2_1, self.up_eval(f_en[1], x3_1)], 1))
 
-        x1_3 = self.DB1_3(torch.cat([f_en[0], x1_1, x1_2, self.up_eval(f_en[0], x2_2)], 1))
+        x1_3 = self.DB1_3(
+            torch.cat([f_en[0], x1_1, x1_2, self.up_eval(f_en[0], x2_2)], 1)
+        )
 
         if self.deepsupervision:
             output1 = self.conv1(x1_1)
@@ -417,11 +449,19 @@ class NestFuse_light2_nodense(nn.Module):
             return [output1, output2, output3]
         else:
             output = self.conv_out(x1_3)
-            # output = torch.nn.Sigmoid()(output)
+            output = torch.nn.Sigmoid()(output)
             return [output]
 
+
 class RFN_decoder(nn.Module):
-    def __init__(self, nb_filter, input_nc=1, output_nc=1, deepsupervision=True,output_filiter=16):
+    def __init__(
+        self,
+        nb_filter,
+        input_nc=1,
+        output_nc=1,
+        deepsupervision=True,
+        output_filiter=16,
+    ):
         super(RFN_decoder, self).__init__()
         self.deepsupervision = deepsupervision
         block = DenseBlock_light
@@ -439,9 +479,15 @@ class RFN_decoder(nn.Module):
         self.DB3_1 = block(nb_filter[2] + nb_filter[3], nb_filter[2], kernel_size, 1)
 
         # short connection
-        self.DB1_2 = block(nb_filter[0] * 2 + nb_filter[1], nb_filter[0], kernel_size, 1)
-        self.DB2_2 = block(nb_filter[1] * 2+ nb_filter[2], nb_filter[1], kernel_size, 1)
-        self.DB1_3 = block(nb_filter[0] * 3 + nb_filter[1], nb_filter[0], kernel_size, 1)
+        self.DB1_2 = block(
+            nb_filter[0] * 2 + nb_filter[1], nb_filter[0], kernel_size, 1
+        )
+        self.DB2_2 = block(
+            nb_filter[1] * 2 + nb_filter[2], nb_filter[1], kernel_size, 1
+        )
+        self.DB1_3 = block(
+            nb_filter[0] * 3 + nb_filter[1], nb_filter[0], kernel_size, 1
+        )
 
         if self.deepsupervision:
             self.conv1 = ConvLayer(nb_filter[0], output_nc, 1, stride)
@@ -480,7 +526,9 @@ class RFN_decoder(nn.Module):
         x3_1 = self.DB3_1(torch.cat([f_en[2], self.up_eval(f_en[2], f_en[3])], 1))
         x2_2 = self.DB2_2(torch.cat([f_en[1], x2_1, self.up_eval(f_en[1], x3_1)], 1))
 
-        x1_3 = self.DB1_3(torch.cat([f_en[0], x1_1, x1_2, self.up_eval(f_en[0], x2_2)], 1))
+        x1_3 = self.DB1_3(
+            torch.cat([f_en[0], x1_1, x1_2, self.up_eval(f_en[0], x2_2)], 1)
+        )
 
         if self.deepsupervision:
             output1 = self.conv1(x1_1)
@@ -492,9 +540,18 @@ class RFN_decoder(nn.Module):
             output = self.conv_out(x1_3)
             return [output]
 
+
 class AxialAttention(nn.Module):
-    def __init__(self, in_planes, out_planes, groups=8, kernel_size=56,
-                 stride=1, bias=False, width=False):
+    def __init__(
+        self,
+        in_planes,
+        out_planes,
+        groups=8,
+        kernel_size=56,
+        stride=1,
+        bias=False,
+        width=False,
+    ):
         assert (in_planes % groups == 0) and (out_planes % groups == 0)
         super(AxialAttention, self).__init__()
         self.in_planes = in_planes
@@ -507,26 +564,28 @@ class AxialAttention(nn.Module):
         self.width = width
 
         # Multi-head self attention
-        self.qkv_transform = qkv_transform(in_planes, out_planes * 2, kernel_size=1, stride=1,
-                                           padding=0, bias=False)
+        self.qkv_transform = qkv_transform(
+            in_planes, out_planes * 2, kernel_size=1, stride=1, padding=0, bias=False
+        )
         self.bn_qkv = nn.BatchNorm1d(out_planes * 2)
         self.bn_similarity = nn.BatchNorm2d(groups * 3)
 
         self.bn_output = nn.BatchNorm1d(out_planes * 2)
 
         # Position embedding
-        self.relative = nn.Parameter(torch.randn(self.group_planes * 2, kernel_size * 2 - 1), requires_grad=True)
+        self.relative = nn.Parameter(
+            torch.randn(self.group_planes * 2, kernel_size * 2 - 1), requires_grad=True
+        )
         query_index = torch.arange(kernel_size).unsqueeze(0)
         key_index = torch.arange(kernel_size).unsqueeze(1)
         relative_index = key_index - query_index + kernel_size - 1
-        self.register_buffer('flatten_index', relative_index.view(-1))
+        self.register_buffer("flatten_index", relative_index.view(-1))
         if stride > 1:
             self.pooling = nn.AvgPool2d(stride, stride=stride)
 
         self.reset_parameters()
 
     def forward(self, x):
-        
         if self.width:
             x = x.permute(0, 2, 1, 3)
         else:
@@ -536,27 +595,45 @@ class AxialAttention(nn.Module):
 
         # Transformations
         qkv = self.bn_qkv(self.qkv_transform(x))
-        q, k, v = torch.split(qkv.reshape(N * W, self.groups, self.group_planes * 2, H), [self.group_planes // 2, self.group_planes // 2, self.group_planes], dim=2)
+        q, k, v = torch.split(
+            qkv.reshape(N * W, self.groups, self.group_planes * 2, H),
+            [self.group_planes // 2, self.group_planes // 2, self.group_planes],
+            dim=2,
+        )
 
         # Calculate position embedding
-        all_embeddings = torch.index_select(self.relative, 1, self.flatten_index).view(self.group_planes * 2, self.kernel_size, self.kernel_size)
-        q_embedding, k_embedding, v_embedding = torch.split(all_embeddings, [self.group_planes // 2, self.group_planes // 2, self.group_planes], dim=0)
-        #pdb.set_trace()
-        
-        qr = torch.einsum('bgci,cij->bgij', q, q_embedding)
-        kr = torch.einsum('bgci,cij->bgij', k, k_embedding).transpose(2, 3)
-        
-        qk = torch.einsum('bgci, bgcj->bgij', q, k)
-        
+        all_embeddings = torch.index_select(self.relative, 1, self.flatten_index).view(
+            self.group_planes * 2, self.kernel_size, self.kernel_size
+        )
+        q_embedding, k_embedding, v_embedding = torch.split(
+            all_embeddings,
+            [self.group_planes // 2, self.group_planes // 2, self.group_planes],
+            dim=0,
+        )
+        # pdb.set_trace()
+
+        qr = torch.einsum("bgci,cij->bgij", q, q_embedding)
+        kr = torch.einsum("bgci,cij->bgij", k, k_embedding).transpose(2, 3)
+
+        qk = torch.einsum("bgci, bgcj->bgij", q, k)
+
         stacked_similarity = torch.cat([qk, qr, kr], dim=1)
-        stacked_similarity = self.bn_similarity(stacked_similarity).view(N * W, 3, self.groups, H, H).sum(dim=1)
-        #stacked_similarity = self.bn_qr(qr) + self.bn_kr(kr) + self.bn_qk(qk)
+        stacked_similarity = (
+            self.bn_similarity(stacked_similarity)
+            .view(N * W, 3, self.groups, H, H)
+            .sum(dim=1)
+        )
+        # stacked_similarity = self.bn_qr(qr) + self.bn_kr(kr) + self.bn_qk(qk)
         # (N, groups, H, H, W)
         similarity = F.softmax(stacked_similarity, dim=3)
-        sv = torch.einsum('bgij,bgcj->bgci', similarity, v)
-        sve = torch.einsum('bgij,cij->bgci', similarity, v_embedding)
-        stacked_output = torch.cat([sv, sve], dim=-1).view(N * W, self.out_planes * 2, H)
-        output = self.bn_output(stacked_output).view(N, W, self.out_planes, 2, H).sum(dim=-2)
+        sv = torch.einsum("bgij,bgcj->bgci", similarity, v)
+        sve = torch.einsum("bgij,cij->bgci", similarity, v_embedding)
+        stacked_output = torch.cat([sv, sve], dim=-1).view(
+            N * W, self.out_planes * 2, H
+        )
+        output = (
+            self.bn_output(stacked_output).view(N, W, self.out_planes, 2, H).sum(dim=-2)
+        )
 
         if self.width:
             output = output.permute(0, 2, 1, 3)
@@ -569,24 +646,44 @@ class AxialAttention(nn.Module):
         return output
 
     def reset_parameters(self):
-        self.qkv_transform.weight.data.normal_(0, math.sqrt(1. / self.in_planes))
-        #nn.init.uniform_(self.relative, -0.1, 0.1)
-        nn.init.normal_(self.relative, 0., math.sqrt(1. / self.group_planes))
+        self.qkv_transform.weight.data.normal_(0, math.sqrt(1.0 / self.in_planes))
+        # nn.init.uniform_(self.relative, -0.1, 0.1)
+        nn.init.normal_(self.relative, 0.0, math.sqrt(1.0 / self.group_planes))
+
 
 class AxialBlock(nn.Module):
     expansion = 2
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
-                 base_width=64, dilation=1, norm_layer=None, kernel_size=56):
+    def __init__(
+        self,
+        inplanes,
+        planes,
+        stride=1,
+        downsample=None,
+        groups=1,
+        base_width=64,
+        dilation=1,
+        norm_layer=None,
+        kernel_size=56,
+    ):
         super(AxialBlock, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
-        width = int(planes * (base_width / 64.))
+        width = int(planes * (base_width / 64.0))
         # Both self.conv2 and self.downsample layers downsample the input when stride != 1
         self.conv_down = conv1x1(inplanes, width)
         self.bn1 = norm_layer(width)
-        self.hight_block = AxialAttention(width, width, groups=groups, kernel_size=kernel_size)
-        self.width_block = AxialAttention(width, width, groups=groups, kernel_size=kernel_size, stride=stride, width=True)
+        self.hight_block = AxialAttention(
+            width, width, groups=groups, kernel_size=kernel_size
+        )
+        self.width_block = AxialAttention(
+            width,
+            width,
+            groups=groups,
+            kernel_size=kernel_size,
+            stride=stride,
+            width=True,
+        )
         self.conv_up = conv1x1(width, planes * self.expansion)
         self.bn2 = norm_layer(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
