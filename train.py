@@ -30,9 +30,9 @@ def _save_checkpoint(model, dir,name, save_best=False, overwrite=True):
     
 def evaluate(nest_model,fusion_model,dataset_name,dataset_path,lamda,w1,w2,tensorboard_writer,number=number,save_dir=None):
     dataset = get_dataset(dataset_name)(dataset_path)
-    dataloader = DataLoader(dataset,batch_size=6,num_workers=4,drop_last=True)
-    vi_ssim_loss = MS_SSIM(data_range=1.0,channel=1)
-    ir_ssim_loss = MS_SSIM(data_range=1.0,channel=1)
+    dataloader = DataLoader(dataset,batch_size=2,num_workers=4,drop_last=True)
+    vi_ssim_loss = MS_SSIM(data_range=255,channel=1)
+    ir_ssim_loss = MS_SSIM(data_range=255,channel=1)
     mse_loss = torch.nn.MSELoss()
     nest_model.eval()
     fusion_model.eval()
@@ -40,8 +40,8 @@ def evaluate(nest_model,fusion_model,dataset_name,dataset_path,lamda,w1,w2,tenso
     ms_ssim_list = []
     for index,batch in tqdm(enumerate(dataloader),total=len(dataloader)):
         img_vi ,img_ir = batch
-        img_vi = img_vi.cuda()
-        img_ir = img_ir.cuda()
+        img_vi = img_vi.cuda()[:,0,:,:].unsqueeze(1)
+        img_ir = img_ir.cuda()[:,0,:,:].unsqueeze(1)
         loss1_value = 0
         loss2_value = 0
         with torch.no_grad():
@@ -49,6 +49,7 @@ def evaluate(nest_model,fusion_model,dataset_name,dataset_path,lamda,w1,w2,tenso
             en_vi = nest_model.encoder(img_vi)
 			# fusion
             f = fusion_model(en_ir, en_vi)
+            f = f+en_vi
 			# decoder
             outputs = nest_model.decoder_eval(f)
             x_vi = Variable(img_vi.data.clone(), requires_grad=False)
@@ -56,8 +57,7 @@ def evaluate(nest_model,fusion_model,dataset_name,dataset_path,lamda,w1,w2,tenso
             for output in outputs:
                 # output[output>255]=255
                 # output[output<0]=0
-                output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
-                output = output * 255
+                # output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
 				# ---------------------- LOSS IMAGES ------------------------------------
 				# detail loss
                 # ssim_loss_temp2 = ssim_loss(output, x_vi)
@@ -122,7 +122,7 @@ def save_img(img,path):
 	batch = img.shape[0]
 	for i in range(batch):
 		img = img.detach()
-		img_numpy = img[i].squeeze().cpu().numpy()
+		img_numpy = img[i].squeeze().cpu().numpy()*255
 		img_resize = cv2.resize(img_numpy,(640,512),cv2.INTER_AREA)
 		path1 = os.path.join(path,f"第{i}张图.png")
 		cv2.imwrite(str(path1),img_resize)
@@ -184,8 +184,8 @@ def train(dataset, img_flag, lamda, w1, w2):
 		model_path = r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/model/nestfuse_gray_1e2.model"
 		# load auto-encoder network
 		print('Resuming, initializing auto-encoder using weight from {}.'.format(model_path))
-		# nest = torch.load(model_path)
-		nest_model.load_state_dict(torch.load(model_path))
+		nest = torch.load(model_path)
+		nest_model.load_state_dict(nest)
 		nest_model.cuda()
 		nest_model.eval()
 
@@ -197,7 +197,8 @@ def train(dataset, img_flag, lamda, w1, w2):
 	# if args.resume_fusion_model is not None:
 	# 	print('Resuming, initializing fusion net using weight from {}.'.format(args.resume_fusion_model))
 	# 	fusion_model.load_state_dict(torch.load(args.resume_fusion_model))
-	optimizer = torch.optim.Adam(fusion_model.parameters(), 3e-5)
+	parameters = list(fusion_model.parameters())+list(nest_model.parameters())
+	optimizer = torch.optim.Adam(parameters, 3e-5)
 	mse_loss = torch.nn.MSELoss()
 	vi_ssim_loss = MS_SSIM(data_range=1.0,channel=1)
 	ir_ssim_loss = MS_SSIM(data_range=1.0,channel=1)
@@ -253,13 +254,14 @@ def train(dataset, img_flag, lamda, w1, w2):
 			loss1_value=0.
 			loss2_value=0.
 			img_vi,img_ir=batch
-			img_ir = img_ir.cuda()
-			img_vi = img_vi.cuda()
+			img_ir = img_ir.cuda()[:,0,:,:].unsqueeze(1)
+			img_vi = img_vi.cuda()[:,0,:,:].unsqueeze(1)
 			# encoder
 			en_ir = nest_model.encoder(img_ir)
 			en_vi = nest_model.encoder(img_vi)
 			# fusion
 			f = fusion_model(en_ir, en_vi)
+			f = f
 			# decoder
 			outputs = nest_model.decoder_eval(f)
 			# save_img(outputs[0],"/root/autodl-tmp/test_for_paper/Code_For_ITCD/")
@@ -273,29 +275,31 @@ def train(dataset, img_flag, lamda, w1, w2):
 			for output in outputs:
 				# output[output>255]=255
 				# output[output<0]=0
-				output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
-				output = output * 255
+				# output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
+				# output = output * 255
+				if count%30==0:
+					save_img(output,"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved")
 				# ---------------------- LOSS IMAGES ------------------------------------
 				# detail loss
 				ssim_loss_temp_vi = vi_ssim_loss(output, x_vi)
 				ssim_loss_temp_ir = ir_ssim_loss(output,x_ir)
-				loss1_value += w1*lamda * (1 - ssim_loss_temp_vi)+w2*lamda*(1-ssim_loss_temp_ir)
+				loss1_value += w1*3* (1 - ssim_loss_temp_vi)+w2*3*(1-ssim_loss_temp_ir)
 
 				# # feature loss
-				# g2_ir_fea = en_ir
-				# g2_vi_fea = en_vi
-				# g2_fuse_fea = f
+				g2_ir_fea = en_ir
+				g2_vi_fea = en_vi
+				g2_fuse_fea = f
 
-				# w_ir = [w1, w1, w1, w1]
-				# w_vi = [w2, w2, w2, w2]
-				# w_fea = [1, 10, 100, 1000]
-				# for ii in range(4):
-				# 	g2_ir_temp = g2_ir_fea[ii]
-				# 	g2_vi_temp = g2_vi_fea[ii]
-				# 	g2_fuse_temp = g2_fuse_fea[ii]
-				# 	(bt, cht, ht, wt) = g2_ir_temp.size()
-				# 	loss2_value += w_fea[ii]*mse_loss(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
-				loss2_value += mse_loss(output,w1*x_vi+w2*x_ir)
+				w_ir = [w1, w1, w1, w1]
+				w_vi = [w2, w2, w2, w2]
+				w_fea = [1, 10, 100, 1000]
+				for ii in range(4):
+					g2_ir_temp = g2_ir_fea[ii]
+					g2_vi_temp = g2_vi_fea[ii]
+					g2_fuse_temp = g2_fuse_fea[ii]
+					(bt, cht, ht, wt) = g2_ir_temp.size()
+					loss2_value += w_fea[ii]*mse_loss(g2_fuse_temp, w_ir[ii]*g2_ir_temp + w_vi[ii]*g2_vi_temp)
+				# loss2_value += mse_loss(output,w1*x_vi+w2*x_ir)
 
 			loss1_value /= len(outputs)
 			loss2_value /= len(outputs)
@@ -308,15 +312,15 @@ def train(dataset, img_flag, lamda, w1, w2):
 
 			all_fea_loss += loss2_value.item() # 
 			all_ssim_loss += loss1_value.item() # 
-			if index %100 == 0:
-				tensor_writer.add_scalar("Training/ssim_loss",all_ssim_loss,index+e*len(dataloader))
-				tensor_writer.add_scalar("Training/mse_loss",all_fea_loss,index+e*len(dataloader))
-				tensor_writer.add_scalar("Training/total_loss",total_loss.item(),index+e*len(dataloader))
+			if True:# index %100 == 0:
+				tensor_writer.add_scalar("Training/ssim_loss",all_ssim_loss,count)
+				tensor_writer.add_scalar("Training/mse_loss",all_fea_loss,count)
+				tensor_writer.add_scalar("Training/total_loss",total_loss.item(),count)
 				# tensor_writer.add_scalar("Training/ssim",all_ssim_loss,index+e*len(dataloader))
 				# tensor_writer.add_scalar("Training/ms_ssim",all_fea_loss,index+e*len(dataloader))
 				# tensor_writer.add_scalar("Training/total_loss",total_loss.item(),index+e*len(dataloader))
-			if index%400 ==0:
-				ssim,ms_ssim = evaluate(nest_model,fusion_model,"kaist",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/dataset/test/kaist_wash_picture_test",lamda,w1,w2,tensor_writer,count,root_dir)
+			if False:#index%400 ==0:
+				ssim,ms_ssim = evaluate(nest_model,fusion_model,"kaist",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/dataset/test/kaist",lamda,w1,w2,tensor_writer,count,root_dir)
 				nest_model.train()
 				fusion_model.train()
 				if ssim>max_ssim or ms_ssim > max_ms_ssim:

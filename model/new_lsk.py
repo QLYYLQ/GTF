@@ -1,8 +1,5 @@
 import torch
 import torch.nn as nn
-from timm.models.layers import to_2tuple,trunc_normal_,DropPath
-import math
-from functools import partial
 
 
 
@@ -31,4 +28,3 @@ class LSKblock(nn.Module):
         attn = attn1 * sig[:,0,:,:].unsqueeze(1) + attn2 * sig[:,1,:,:].unsqueeze(1)
         attn = self.conv(attn)
         return x * attn
-w

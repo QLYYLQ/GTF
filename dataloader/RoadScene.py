@@ -1,11 +1,10 @@
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
+# import sys
+# from pathlib import Path
+# sys.path.append(str(Path(__file__).parent.parent))
 
 
 
-
-from torch.utils.data import Dataset
+from torch.utils import data
 import os
 from pathlib import Path
 import cv2
@@ -13,8 +12,8 @@ import numpy as np
 import torch
 from torchvision import transforms
 
-class RoadScenedataset(Dataset):
-    def __init__(self,root_dir,img_size = (512,512),transform = transforms([transforms.ToTensor(),])):
+class RoadScenedataset(data.Dataset):
+    def __init__(self,root_dir,img_size = (512,512),transform = transforms.Compose([transforms.ToTensor(),])):
         self.root_dir = root_dir
         self.dir_name = ["cropinfrared","crop_HR_visible"]
         self.visible_dir = os.path.join(root_dir,self.dir_name[1])

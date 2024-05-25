@@ -6,7 +6,7 @@ from functools import partial
 import math
 import random
 import pdb
-from model.lsk import Block as LSK_Block
+from model.lsk import LSKblock
 
 EPSILON = 1e-10
 
@@ -161,7 +161,7 @@ class FusionBlock_res(torch.nn.Module):
         self.mlp = [8,8,4,4]
         self.norm_layer = partial(nn.LayerNorm,eps=1e-6)
         # self.axial_attn = AxialBlock(channels, channels//2, kernel_size=img_size)
-        self.attn = nn.Sequential(LSK_Block(channels))
+        self.attn = nn.Sequential(LSKblock(channels))
         self.axial_fusion = nn.Sequential(f_ConvLayer(2*channels, channels, 1, 1))
         self.conv_fusion = nn.Sequential(f_ConvLayer(channels, channels, 1, 1))
         #self.conv_fusion_bn = nn.BatchNorm2d(channels)
@@ -265,9 +265,9 @@ class Fusion_SPA(torch.nn.Module):
 # spatial attention
 def spatial_attention(tensor, spatial_type='sum'):
     spatial = []
-    if spatial_type is 'mean':
+    if spatial_type == 'mean':
         spatial = tensor.mean(dim=1, keepdim=True)
-    elif spatial_type is 'sum':
+    elif spatial_type == 'sum':
         spatial = tensor.sum(dim=1, keepdim=True)
     return spatial
 
@@ -311,15 +311,15 @@ class Fusion_strategy(nn.Module):
         self.fusion_nuc = Fusion_Nuclear()
 
     def forward(self, en_ir, en_vi):
-        if self.fs_type is 'add':
+        if self.fs_type == 'add':
             fusion_operation = self.fusion_add
-        elif self.fs_type is 'avg':
+        elif self.fs_type == 'avg':
             fusion_operation = self.fusion_avg
-        elif self.fs_type is 'max':
+        elif self.fs_type == 'max':
             fusion_operation = self.fusion_max
-        elif self.fs_type is 'spa':
+        elif self.fs_type == 'spa':
             fusion_operation = self.fusion_spa
-        elif self.fs_type is 'nuclear':
+        elif self.fs_type == 'nuclear':
             fusion_operation = self.fusion_nuc
 
         f1_0 = fusion_operation(en_ir[0], en_vi[0])
@@ -395,6 +395,7 @@ class NestFuse_light2_nodense(nn.Module):
             return [output1, output2, output3]
         else:
             output = self.conv_out(x1_3)
+            output = torch.nn.Sigmoid()(output)
             return [output]
 
     def decoder_eval(self, f_en):
@@ -416,14 +417,15 @@ class NestFuse_light2_nodense(nn.Module):
             return [output1, output2, output3]
         else:
             output = self.conv_out(x1_3)
+            # output = torch.nn.Sigmoid()(output)
             return [output]
 
 class RFN_decoder(nn.Module):
-    def __init__(self, nb_filter, input_nc=1, output_nc=1, deepsupervision=True):
+    def __init__(self, nb_filter, input_nc=1, output_nc=1, deepsupervision=True,output_filiter=16):
         super(RFN_decoder, self).__init__()
         self.deepsupervision = deepsupervision
         block = DenseBlock_light
-        output_filter = 16
+        self.output_filter = output_filiter
         kernel_size = 3
         stride = 1
 

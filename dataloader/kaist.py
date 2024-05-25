@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from torchvision import transforms
 class kaistdataset(data.Dataset):
-    def __init__(self,root_dir,img_size=(512,512),transform=transforms.Compose([transforms.ToTensor(),])):
+    def __init__(self,root_dir,img_size=(256,256),transform=transforms.Compose([transforms.ToTensor(),])):
         self.root_dir = root_dir
         self.dir_name = ["lwir","visible"]
         self.visible_dir = os.path.join(self.root_dir,self.dir_name[1])
