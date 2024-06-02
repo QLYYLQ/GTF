@@ -23,7 +23,7 @@ class VIFBdataset(Dataset):
         ),
     ):
         self.root_dir = root_dir
-        self.dir_name = ["Inf", "Vis"]
+        self.dir_name = ["IR", "VI"]
         self.visible_dir = os.path.join(root_dir, self.dir_name[1])
         self.infrared_dir = os.path.join(root_dir, self.dir_name[0])
         self.visible_list = self._list_all_files(self.visible_dir)
@@ -53,4 +53,5 @@ class VIFBdataset(Dataset):
     def __getitem__(self, index):
         vis_img = self._change_image_to_tensor(self.visible_list[index])
         inf_img = self._change_image_to_tensor(self.infrared_list[index])
-        return vis_img, inf_img
+        img_name = self.infrared_list[index].split("/")[-1]
+        return vis_img, inf_img,img_name

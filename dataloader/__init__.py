@@ -18,8 +18,14 @@ def get_datapath(name):
 
 
 def get_testdatapath(name):
-    path = os.path.join(Path(__file__).reslove().parent.parent, "dataset", "test", name)
+    path = os.path.join(Path(__file__).resolve().parent.parent, "dataset", "test", name)
     return path
+
+def get_imgsize(name):
+    return {
+        "VIFB":(460,630),
+        "RoadScene":(1343,1004)
+    }[name]
 
 
 def get_dataset(name):

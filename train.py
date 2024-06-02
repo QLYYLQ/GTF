@@ -17,7 +17,7 @@ from torch.autograd import Variable
 import cv2
 from utils.gradient import gradient
 
-epochs = 6
+epochs = 10
 EPSILON = 1e-6
 number = 0
 
@@ -41,14 +41,18 @@ def evaluate(
     gamma,
     w1,
     w2,
+    ssim_vi,
+    ssim_ir,
     tensorboard_writer,
     number=number,
     save_dir=None,
 ):
+    if not hasattr(evaluate,"counter"):
+        evaluate.counter=0
     dataset = get_dataset(dataset_name)(dataset_path)
-    dataloader = DataLoader(dataset, batch_size=2, num_workers=4, drop_last=True)
-    vi_ssim_loss = MS_SSIM(data_range=255, channel=1)
-    ir_ssim_loss = MS_SSIM(data_range=255, channel=1)
+    dataloader = DataLoader(dataset, batch_size=10, num_workers=4, drop_last=True)
+    vi_ssim_loss = MS_SSIM(data_range=1.0, channel=1)
+    ir_ssim_loss = MS_SSIM(data_range=1.0, channel=1)
     mse_loss = torch.nn.MSELoss()
     nest_model.eval()
     fusion_model.eval()
@@ -76,7 +80,7 @@ def evaluate(
                 ssim_loss_temp_ir = ir_ssim_loss(output, x_ir)
                 ssim_vi = ssim(output, x_vi, data_range=1.0)
                 ssim_ir = ssim(output, x_ir, data_range=1.0)
-                loss1_value += w1 * (1 - ssim_loss_temp_vi) + w2 * (
+                loss1_value += ssim_vi * (1 - ssim_loss_temp_vi) + ssim_ir * (
                     1 - ssim_loss_temp_ir
                 )
 
@@ -105,7 +109,7 @@ def evaluate(
             gradinet_loss /= len(output)
             iter1.set_postfix(
                 count=number,
-                loss_mse=loss2_value.item(),
+                loss_mse=0.07*loss2_value.item(),
                 loss_texture=gamma * gradinet_loss.item(),
                 loss_ssim=beta * loss1_value.item(),
             )
@@ -116,31 +120,32 @@ def evaluate(
             total_loss = loss1_value + loss2_value
             if index % 50 == 0:
                 tensorboard_writer.add_scalar(
-                    "Validation/total_loss", total_loss, number
+                    "Validation/total_loss", total_loss, evaluate.counter
                 )
                 tensorboard_writer.add_scalar(
-                    "Validation/ms_ssim_loss", beta * loss1_value, number
+                    "Validation/ms_ssim_loss",  loss1_value, evaluate.counter
                 )
                 tensorboard_writer.add_scalar(
-                    "Validation/mse_loss", loss2_value, number
+                    "Validation/mse_loss", loss2_value, evaluate.counter
                 )
                 tensorboard_writer.add_scalar(
-                    "Validation/texture_loss", gamma * gradinet_loss.item(), number
+                    "Validation/texture_loss", gradinet_loss.item(), evaluate.counter
                 )
                 tensorboard_writer.add_scalar(
-                    "Validation/vi_ms_ssim", ssim_loss_temp_vi.item(), number
+                    "Validation/vi_ms_ssim", ssim_loss_temp_vi.item(), evaluate.counter
                 )
                 tensorboard_writer.add_scalar(
-                    "Validation/vi_ssim", ssim_vi.item(), number
+                    "Validation/vi_ssim", ssim_vi.item(), evaluate.counter
                 )
                 tensorboard_writer.add_scalar(
-                    "Validation/ir_ms_ssim", ssim_loss_temp_ir.item(), number
+                    "Validation/ir_ms_ssim", ssim_loss_temp_ir.item(), evaluate.counter
                 )
                 tensorboard_writer.add_scalar(
-                    "Validation/ir_ssim", ssim_ir.item(), number
+                    "Validation/ir_ssim", ssim_ir.item(), evaluate.counter
                 )
                 ssim_list.append(ssim_vi.item())
                 ms_ssim_list.append(ssim_loss_temp_vi.item())
+            evaluate.counter+=1
 
     return max(ssim_list), max(ms_ssim_list)
 
@@ -171,7 +176,7 @@ def set_seed(seed=42):
 set_seed(42)  # 你可以选择任何喜欢的整数作为种子
 
 
-def create_dir(beta, gamma, w1, w2):
+def create_dir(beta, gamma, w1, w2,ssim_vi,ssim_ir):
     root_dir = r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved"
     path = Path(root_dir)
     dir_path = os.path.join(
@@ -180,10 +185,14 @@ def create_dir(beta, gamma, w1, w2):
         + str(beta)
         + "--gamma:"
         + str(gamma)
-        + "w1:"
+        + "--w1:"
         + str(w1)
         + "--w2:"
-        + str(w2),
+        + str(w2)
+        + "--ssim vi:"
+        +str(ssim_vi)
+        +"--ssim ir:"
+        + str(ssim_ir)
     )
     dir_path = str(dir_path)
     os.makedirs(dir_path, exist_ok=True)
@@ -194,17 +203,21 @@ def main():
     dataset = get_dataset("kaist")(get_datapath("kaist"))
     # True - RGB , False - gray
     img_flag = False
-    beta_gamma_list = [[2, 3], [3, 3], [4, 3]]
-    weight_for_vi_if_list = [[0.6, 0.4], [0.7, 0.3], [0.8, 0.2]]
+    beta_gamma_list = sorted([[5,70]])# [[15,700],[10,700],[15,900],[25,900]]
+    weight_for_vi_if_list = [[6,3]]# [ [0.7, 0.3], [0.8, 0.2]]
+    weight_for_vi_if_ssim_list=[[1.0,0.5],[1.0,1.0],[0.5,1.0],[0.5,0.5]]
 
     for w_w in weight_for_vi_if_list:
         w1, w2 = w_w
-        for beta, gamma in beta_gamma_list:
-            train(dataset, img_flag, beta, gamma, w1, w2)
+        for ssim_vi,ssim_ir in weight_for_vi_if_ssim_list:
+            for beta, gamma in beta_gamma_list:
+                train(dataset, img_flag, beta, gamma, w1, w2,ssim_vi,ssim_ir)
 
 
-def train(dataset, img_flag, beta, gamma, w1, w2):
-    batch_size = 6
+def train(dataset, img_flag, beta, gamma, w1, w2,ssim_vi,ssim_ir):
+    evaluate1 = evaluate
+    evaluate1.counter = 0
+    batch_size = 10
     # load network model
     nc = 1
     input_nc = nc
@@ -212,37 +225,57 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
     # nb_filter = [64, 128, 256, 512]
     nb_filter = [64, 112, 160, 208]
     f_type = "res"
-    root_dir = create_dir(beta, gamma, w1, w2)
+    root_dir = create_dir(beta, gamma, w1, w2,ssim_vi,ssim_ir)
+    pth_dir = os.path.join(
+        "/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved",
+        "beta:"
+        + str(beta)
+        + "--gamma:"
+        + str(gamma)
+        + "--w1:"
+        + str(w1)
+        + "--w2:"
+        + str(w2)
+        + "--ssim vi:"
+        +str(ssim_vi)
+        +"--ssim ir:"
+        + str(ssim_ir)
+    )
+    nest = os.path.join(pth_dir,"nest model best.pth")
+    fusion = os.path.join(pth_dir,"fusion model best.pth")
     dataloader = DataLoader(
         dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4
     )
-    with torch.no_grad():
-        deepsupervision = False
-        nest_model = NestFuse_light2_nodense(
-            nb_filter, input_nc, output_nc, deepsupervision
-        )
-        model_path = r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/model/nestfuse_gray_1e2.model"
-        # load auto-encoder network
-        print(
-            "Resuming, initializing auto-encoder using weight from {}.".format(
-                model_path
-            )
-        )
-        nest = torch.load(model_path)
-        nest_model.load_state_dict(nest)
-        nest_model.cuda()
-        nest_model.eval()
+
+    deepsupervision = False
+    nest_model = NestFuse_light2_nodense(
+        nb_filter, input_nc, output_nc, deepsupervision
+    )
+    # model_path = r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/model/nestfuse_gray_1e2.model"
+    # load auto-encoder network
+    # print(
+    #     "Resuming, initializing auto-encoder using weight from {}.".format(
+    #         model_path
+    #     )
+    # )
+    # nest = torch.load(nest)
+    # nest_model.load_state_dict(nest["model"])
+    nest_model.cuda()
+    nest_model.eval()
 
     # fusion network
     fusion_model = Fusion_network(nb_filter, f_type)
+    # fusion = torch.load(fusion)
+    # fusion_model.load_state_dict(fusion["model"])
     fusion_model.cuda()
     fusion_model.train()
     nest_model.train()
+
     # if args.resume_fusion_model is not None:
     # 	print('Resuming, initializing fusion net using weight from {}.'.format(args.resume_fusion_model))
     # 	fusion_model.load_state_dict(torch.load(args.resume_fusion_model))
     parameters = list(fusion_model.parameters()) + list(nest_model.parameters())
-    optimizer = torch.optim.Adam(parameters, 3e-5)
+    optimizer = torch.optim.Adam(parameters, 7e-5)
     mse_loss = torch.nn.MSELoss()
     vi_ssim_loss = MS_SSIM(data_range=1.0, channel=1)
     ir_ssim_loss = MS_SSIM(data_range=1.0, channel=1)
@@ -278,7 +311,7 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
     # trans_model.cuda()
     fusion_model.cuda()
     # sobel_loss = nn.L1Loss()
-    tensorboard_dir = f"{beta} {gamma} {w1} {w2}"
+    tensorboard_dir = f"{beta} {gamma} {w1} {w2} {ssim_vi} {ssim_ir}"
     tensorboard = "/root/tf-logs/" + tensorboard_dir
     tensor_writer = SummaryWriter(tensorboard, flush_secs=30)
     max_ssim = 0
@@ -305,7 +338,7 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
             f = fusion_model(en_ir, en_vi)
             f = f
             # decoder
-            outputs = nest_model.decoder_eval(f)
+            outputs = nest_model.decoder_train(f)
             # save_img(outputs[0],"/root/autodl-tmp/test_for_paper/Code_For_ITCD/")
             # resolution loss: between fusion image and visible image
             x_ir = Variable(img_ir.data.clone(), requires_grad=False)
@@ -320,7 +353,7 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
                 # output[output<0]=0
                 # output = (output - torch.min(output)) / (torch.max(output) - torch.min(output) + EPSILON)
                 # output = output * 255
-                if count % 300 == 0:
+                if count % 50 == 0:
                     save_img(
                         output, "/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved"
                     )
@@ -328,7 +361,7 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
                 # detail loss
                 ssim_loss_temp_vi = vi_ssim_loss(output, x_vi)
                 ssim_loss_temp_ir = ir_ssim_loss(output, x_ir)
-                loss1_value += w1 * (1 - ssim_loss_temp_vi) + w2 * (
+                loss1_value += ssim_vi * (1 - ssim_loss_temp_vi) + ssim_ir * (
                     1 - ssim_loss_temp_ir
                 )
 
@@ -337,8 +370,8 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
                 g2_vi_fea = en_vi
                 g2_fuse_fea = f
 
-                w_ir = [w1, w1, w1, w1]
-                w_vi = [w2, w2, w2, w2]
+                w_ir = [w1]*4
+                w_vi = [w2]*4
                 w_fea = [1, 10, 100, 1000]
                 for ii in range(4):
                     g2_ir_temp = g2_ir_fea[ii]
@@ -356,7 +389,7 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
             loss2_value /= len(outputs)
             gradinet_loss /= len(output)
 
-            total_loss = beta * loss1_value + loss2_value + gamma * gradinet_loss
+            total_loss = beta * loss1_value + 0.07*loss2_value + gamma * gradinet_loss
             iter1.set_postfix(
                 count=count,
                 loss_mse=loss2_value.item(),
@@ -370,8 +403,13 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
             all_ssim_loss += beta * loss1_value.item()
             all_texture_loss += gamma * gradinet_loss.item()
             if index % 30 == 0:
+                tensor_writer.add_scalar("Training/true_ssim_loss", loss1_value.item(), count)
+                tensor_writer.add_scalar("Training/true_mse_loss", loss2_value.item(), count)
+                tensor_writer.add_scalar(
+                    "Training/true_texture_loss", gradinet_loss.item(), count
+                )
                 tensor_writer.add_scalar("Training/ssim_loss", all_ssim_loss, count)
-                tensor_writer.add_scalar("Training/mse_loss", all_fea_loss, count)
+                # tensor_writer.add_scalar("Training/true_mse_loss", loss2_value.item(), count)
                 tensor_writer.add_scalar(
                     "Training/texture_loss", all_texture_loss, count
                 )
@@ -381,8 +419,8 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
                 # tensor_writer.add_scalar("Training/ssim",all_ssim_loss,index+e*len(dataloader))
                 # tensor_writer.add_scalar("Training/ms_ssim",all_fea_loss,index+e*len(dataloader))
                 # tensor_writer.add_scalar("Training/total_loss",total_loss.item(),index+e*len(dataloader))
-            if index % 400 == 0:
-                ssim, ms_ssim = evaluate(
+            if index % 700 == 0:
+                ssim, ms_ssim = evaluate1(
                     nest_model,
                     fusion_model,
                     "kaist",
@@ -391,6 +429,8 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
                     gamma,
                     w1,
                     w2,
+                    ssim_vi,
+                    ssim_ir,
                     tensor_writer,
                     count,
                     root_dir,
@@ -413,13 +453,11 @@ def train(dataset, img_flag, beta, gamma, w1, w2):
                     path = str(
                         os.path.join(root_dir, f"{index+e*len(dataloader)}次视觉")
                     )
-                    img_vi = img_vi * 255
                     os.makedirs(path, exist_ok=True)
                     save_img(img_vi, path)
                     path = str(
                         os.path.join(root_dir, f"{index+e*len(dataloader)}次热成像")
                     )
-                    img_ir = img_ir * 255
                     os.makedirs(path, exist_ok=True)
                     save_img(img_ir, path)
             count += 1

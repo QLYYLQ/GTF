@@ -188,12 +188,15 @@ class FusionBlock_res(torch.nn.Module):
     def __init__(self, channels, img_size, index, embed_dims=[32, 64, 160, 256]):
         super(FusionBlock_res, self).__init__()
         self.embed_dims = embed_dims
+        self.norm_layer = nn.BatchNorm2d
+        self.relu = nn.ReLU()
         self.mlp = [8, 8, 4, 4]
-        self.norm_layer = partial(nn.LayerNorm, eps=1e-6)
+        self.norm_layer = nn.BatchNorm2d(channels)
         # self.axial_attn = AxialBlock(channels, channels//2, kernel_size=img_size)
         self.attn = nn.Sequential(LSKblock(channels))
         self.axial_fusion = nn.Sequential(f_ConvLayer(2 * channels, channels, 1, 1))
         self.conv_fusion = nn.Sequential(f_ConvLayer(channels, channels, 1, 1))
+        self.sig = nn.Sigmoid()
         # self.conv_fusion_bn = nn.BatchNorm2d(channels)
 
         block = []
@@ -208,8 +211,9 @@ class FusionBlock_res(torch.nn.Module):
 
     def forward(self, x_ir, x_vi):
         # initial fusion - conv
-        a_cat = torch.cat([self.attn(x_ir), self.attn(x_vi)], 1)
+        a_cat = torch.cat([self.relu(self.norm_layer(self.relu(self.attn(self.relu(self.norm_layer(x_ir)))))+x_ir), self.relu(self.norm_layer(self.relu(self.attn(self.relu(self.norm_layer(x_vi)))))+x_vi)], 1)
         a_init = self.axial_fusion(a_cat)
+        # a_init = self.sig(a_init)
 
         x_cvi = self.conv_fusion(x_vi)
         x_cir = self.conv_fusion(x_ir)
