@@ -17,7 +17,7 @@ from torch.autograd import Variable
 import cv2
 from utils.gradient import gradient
 
-epochs = 10
+epochs = 20
 EPSILON = 1e-6
 number = 0
 
@@ -205,7 +205,7 @@ def main():
     img_flag = False
     beta_gamma_list = sorted([[5,70]])# [[15,700],[10,700],[15,900],[25,900]]
     weight_for_vi_if_list = [[6,3]]# [ [0.7, 0.3], [0.8, 0.2]]
-    weight_for_vi_if_ssim_list=[[1.0,0.5],[1.0,1.0],[0.5,1.0],[0.5,0.5]]
+    weight_for_vi_if_ssim_list=[[1.0,0.5],[0.5,0.5]]#,[0.5,0.5]]# [1.0,1.0],[0.5,1.0],[0.5,0.5]]
 
     for w_w in weight_for_vi_if_list:
         w1, w2 = w_w

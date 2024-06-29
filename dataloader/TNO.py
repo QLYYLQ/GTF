@@ -42,4 +42,5 @@ class TNOdataset(Dataset):
     def __getitem__(self, index):
         vis_img = self._change_image_to_tensor(self.visible_list[index])
         inf_img = self._change_image_to_tensor(self.infrared_list[index])
-        return vis_img,inf_img
+        img_name = self.infrared_list[index].split("/")[-1]
+        return vis_img,inf_img,img_name

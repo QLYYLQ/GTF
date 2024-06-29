@@ -24,7 +24,8 @@ def get_testdatapath(name):
 def get_imgsize(name):
     return {
         "VIFB":(460,630),
-        "RoadScene":(1343,1004)
+        "RoadScene":(1343,1004),
+        "TNO":(620,450)
     }[name]
 
 

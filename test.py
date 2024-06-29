@@ -11,7 +11,7 @@ import numpy as np
 import cv2
 from utils import test as tt
 
-nest_path = [r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:1--gamma:70--w1:6--w2:3--ssim vi:1.0--ssim ir:0.5/nest model best.pth",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:7--gamma:70--w1:6--w2:3--ssim vi:1.0--ssim ir:0.5/nest model best.pth"]# [r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:20--gamma:700w1:0.7--w2:0.3/nest model best.pth",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:20--gamma:700w1:0.8--w2:0.2/nest model best.pth",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:25--gamma:700w1:0.7--w2:0.3/nest model best.pth",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:25--gamma:700w1:0.8--w2:0.2/nest model best.pth"]
+nest_path = [r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:1--gamma:70--w1:6--w2:3--ssim vi:0.5--ssim ir:0.5/nest model best.pth"]#[r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:1--gamma:70--w1:6--w2:3--ssim vi:1.0--ssim ir:0.5/nest model best.pth",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:7--gamma:70--w1:6--w2:3--ssim vi:1.0--ssim ir:0.5/nest model best.pth"]# [r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:20--gamma:700w1:0.7--w2:0.3/nest model best.pth",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:20--gamma:700w1:0.8--w2:0.2/nest model best.pth",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:25--gamma:700w1:0.7--w2:0.3/nest model best.pth",r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/beta:25--gamma:700w1:0.8--w2:0.2/nest model best.pth"]
 fusion_path = [i.replace("nest","fusion") for i in nest_path]
 saved_path = r"/root/autodl-tmp/test_for_paper/Code_For_ITCD/saved/test"
 def test():
@@ -25,7 +25,7 @@ def test():
         nest_model.cuda().eval()
         fusion_model.cuda().eval()
         nest = nest.split("/")[-2]
-        dataset_name = ["RoadScene","VIFB"]
+        dataset_name = ["RoadScene","VIFB","TNO"]
         for i in dataset_name:
             path = os.path.join(saved_path,i,nest)
             os.makedirs(path,exist_ok=True)
@@ -53,7 +53,7 @@ def train(nest_model,fusion_model,dataset_name,path):
             f = fusion_model(en_ir,en_vi)
             outputs = nest_model.decoder_eval(f)
             for output in outputs:
-                img = 0.69*img_vis1+0.31*output
+                img = output
                 for i in range(img.shape[0]):
                     a = img[i].detach().cpu().squeeze().numpy()
                     b = img_vis1[i].detach().cpu().squeeze().numpy()
