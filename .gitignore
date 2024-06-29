@@ -11,3 +11,4 @@ saved/*
 *.out
 eval_saved
 nohup.out
+utils/test.py
