@@ -328,6 +328,7 @@ def train(dataset, img_flag, beta, gamma, w1, w2,ssim_vi,ssim_ir):
             all_fea_loss = 0.0
             loss1_value = 0.0
             loss2_value = 0.0
+            optimizer.zero_grad()
             img_vi, img_ir = batch
             img_ir = img_ir.cuda()[:, 0, :, :].unsqueeze(1)
             img_vi = img_vi.cuda()[:, 0, :, :].unsqueeze(1)
